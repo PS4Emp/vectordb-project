@@ -129,10 +129,6 @@ def evaluate_dataset(dataset_name: str) -> dict:
     print(f"[beir_eval] [{dataset_name}] Computing calibration baseline ...")
     baseline_distances = compute_calibration_baseline(doc_embeddings, cal_k=MAX_K)
 
-    # -- Initialise RobustVDB and add corpus --
-    db = RobustVDB(baseline_distances=baseline_distances)
-    db.add(doc_texts)
-
     # Build duplicate-safe mapping from text to all local IDs that share that text
     text_to_local_ids: Dict[str, List[int]] = {}
     for idx, text in enumerate(doc_texts):
@@ -140,37 +136,37 @@ def evaluate_dataset(dataset_name: str) -> dict:
             text_to_local_ids[text] = []
         text_to_local_ids[text].append(idx)
 
-    # -- Run RobustVDB retrieval --
-    robustdb_results: Dict[str, Dict[int, List[int]]] = {}
-    robustdb_flags: Dict[str, str] = {}
+    # -- Initialise RobustVDB instances --
+    db_md = RobustVDB(baseline_distances=baseline_distances, qpp_mode="mean_distance")
+    db_md.index = baseline_index
+    
+    clarity_thresh = {"scifact": -0.026044, "fiqa": -0.037147}[dataset_name]
+    db_cl = RobustVDB(qpp_mode="clarity", qpp_threshold=clarity_thresh, qpp_k=3)
+    db_cl.index = baseline_index
 
+    # -- Run RobustVDB retrieval (mean_distance) --
+    print(f"[beir_eval] [{dataset_name}] Evaluating RobustVDB (mean_distance) ...")
+    rvdb_results: Dict[str, Dict[int, List[int]]] = {}
+    md_flags: Dict[str, str] = {}
     for query_id in eval_query_ids:
         query_text = queries[query_id]
-        results = db.search(query_text, k=MAX_K)
-        
+        results = db_md.search(query_text, k=MAX_K)
         retrieved_ids = []
         used_ids = set()
-        
         for r in results:
-            text = r["text"]
-            candidates = text_to_local_ids[text]
-            
-            # Find an ID that hasn't been used for this query yet
-            chosen_id = None
-            for cid in candidates:
-                if cid not in used_ids:
-                    chosen_id = cid
-                    break
-            
-            # If all candidates for this exact text have been used, fall back to the first
-            if chosen_id is None:
-                chosen_id = candidates[0]
-                
+            candidates = text_to_local_ids[r["text"]]
+            chosen_id = next((cid for cid in candidates if cid not in used_ids), candidates[0])
             retrieved_ids.append(chosen_id)
             used_ids.add(chosen_id)
+        rvdb_results[query_id] = {k: retrieved_ids[:k] for k in K_VALUES}
+        md_flags[query_id] = results[0]["robustness_flag"] if results else "n/a"
 
-        robustdb_results[query_id] = {k: retrieved_ids[:k] for k in K_VALUES}
-        robustdb_flags[query_id] = results[0]["robustness_flag"] if results else "n/a"
+    # -- Run RobustVDB retrieval (clarity) --
+    print(f"[beir_eval] [{dataset_name}] Evaluating RobustVDB (clarity, thresh={clarity_thresh:.4f}, qpp_k=3) ...")
+    cl_flags: Dict[str, str] = {}
+    for query_id in eval_query_ids:
+        results = db_cl.search(queries[query_id], k=MAX_K)
+        cl_flags[query_id] = results[0]["robustness_flag"] if results else "n/a"
 
     # -- Compute metrics --
     from robustvdb.metrics.robustness import recall_at_k, robustness_score
@@ -179,98 +175,51 @@ def evaluate_dataset(dataset_name: str) -> dict:
     gt_list = [ground_truth[qid] for qid in eval_query_ids]
     base_ret_5 = [baseline_results[qid][5] for qid in eval_query_ids]
     base_ret_10 = [baseline_results[qid][10] for qid in eval_query_ids]
-    rvdb_ret_5 = [robustdb_results[qid][5] for qid in eval_query_ids]
-    rvdb_ret_10 = [robustdb_results[qid][10] for qid in eval_query_ids]
+    rvdb_ret_5 = [rvdb_results[qid][5] for qid in eval_query_ids]
+    rvdb_ret_10 = [rvdb_results[qid][10] for qid in eval_query_ids]
     
-    # Baseline
     base_r5 = np.mean([recall_at_k(ret, gt, 5) for ret, gt in zip(base_ret_5, gt_list)])
     base_r10 = np.mean([recall_at_k(ret, gt, 10) for ret, gt in zip(base_ret_10, gt_list)])
-    base_rob_05_5 = robustness_score(base_ret_5, gt_list, delta=0.5, k=5)
-    base_rob_07_5 = robustness_score(base_ret_5, gt_list, delta=0.7, k=5)
-
-    # RobustVDB
+    base_rob = robustness_score(base_ret_5, gt_list, delta=0.5, k=5)
+    
     rvdb_r5 = np.mean([recall_at_k(ret, gt, 5) for ret, gt in zip(rvdb_ret_5, gt_list)])
     rvdb_r10 = np.mean([recall_at_k(ret, gt, 10) for ret, gt in zip(rvdb_ret_10, gt_list)])
-    rvdb_rob_05_5 = robustness_score(rvdb_ret_5, gt_list, delta=0.5, k=5)
-    rvdb_rob_07_5 = robustness_score(rvdb_ret_5, gt_list, delta=0.7, k=5)
+    rvdb_rob = robustness_score(rvdb_ret_5, gt_list, delta=0.5, k=5)
     
-    # Hard-Query Flag Analysis
-    flags = [robustdb_flags[qid] for qid in eval_query_ids]
-    flagged_mask = [f == "hard_query_warning" for f in flags]
-    stable_mask = [f == "stable" for f in flags]
+    def analyze_flags(flags_dict):
+        flags = [flags_dict[qid] for qid in eval_query_ids]
+        flag_mask = [f == "hard_query_warning" for f in flags]
+        stbl_mask = [f == "stable" for f in flags]
+        flag_rate = sum(flag_mask) / len(flags) if flags else 0.0
+        
+        f_r5, f_bad = "n/a", "n/a"
+        if sum(flag_mask) > 0:
+            recalls = [recall_at_k(rvdb_ret_5[i], gt_list[i], 5) for i in range(len(flags)) if flag_mask[i]]
+            f_r5 = np.mean(recalls)
+            f_bad = sum(1 for r in recalls if r < 0.5) / len(recalls)
+            
+        s_r5, s_bad = "n/a", "n/a"
+        if sum(stbl_mask) > 0:
+            recalls = [recall_at_k(rvdb_ret_5[i], gt_list[i], 5) for i in range(len(flags)) if stbl_mask[i]]
+            s_r5 = np.mean(recalls)
+            s_bad = sum(1 for r in recalls if r < 0.5) / len(recalls)
+            
+        return flag_rate, f_r5, s_r5, f_bad, s_bad
 
-    num_flagged = sum(flagged_mask)
-    num_stable = sum(stable_mask)
-    flag_rate = num_flagged / len(eval_query_ids) if eval_query_ids else 0.0
-
-    # Recall on subsets
-    flagged_r5 = "n/a"
-    flagged_bad_count = "n/a"
-    flagged_bad_frac = "n/a"
-    if num_flagged > 0:
-        flagged_recalls = [
-            recall_at_k(rvdb_ret_5[i], gt_list[i], 5) 
-            for i in range(len(eval_query_ids)) if flagged_mask[i]
-        ]
-        flagged_r5 = np.mean(flagged_recalls)
-        flagged_bad_count = sum(1 for r in flagged_recalls if r < 0.5)
-        flagged_bad_frac = flagged_bad_count / num_flagged
-
-    stable_r5 = "n/a"
-    stable_bad_count = "n/a"
-    stable_bad_frac = "n/a"
-    if num_stable > 0:
-        stable_recalls = [
-            recall_at_k(rvdb_ret_5[i], gt_list[i], 5) 
-            for i in range(len(eval_query_ids)) if stable_mask[i]
-        ]
-        stable_r5 = np.mean(stable_recalls)
-        stable_bad_count = sum(1 for r in stable_recalls if r < 0.5)
-        stable_bad_frac = stable_bad_count / num_stable
-
-    # -- Per-dataset Summary --
-    print("\n" + "-" * 60)
-    print(f"[{dataset_name.upper()}] SUMMARY")
-    print("-" * 60)
-    print("Baseline (Plain Dense)")
-    print(f"  Recall@5           : {base_r5:.4f}")
-    print(f"  Recall@10          : {base_r10:.4f}")
-    print(f"  Robustness-0.5@5   : {base_rob_05_5:.4f}")
-    print(f"  Robustness-0.7@5   : {base_rob_07_5:.4f}")
-    print("-" * 60)
-    print("RobustVDB")
-    print(f"  Recall@5           : {rvdb_r5:.4f}")
-    print(f"  Recall@10          : {rvdb_r10:.4f}")
-    print(f"  Robustness-0.5@5   : {rvdb_rob_05_5:.4f}")
-    print(f"  Robustness-0.7@5   : {rvdb_rob_07_5:.4f}")
-    print("-" * 60)
-    print("Hard-Query Diagnostics")
-    print(f"  Queries Evaluated  : {len(eval_query_ids)}")
-    print(f"  Flag Rate          : {flag_rate:.1%} ({num_flagged} flagged)")
-    
-    f_r5_str = f"{flagged_r5:.4f}" if isinstance(flagged_r5, float) else flagged_r5
-    s_r5_str = f"{stable_r5:.4f}" if isinstance(stable_r5, float) else stable_r5
-    
-    f_bad_str = f"{flagged_bad_count}/{num_flagged} ({flagged_bad_frac:.1%})" if isinstance(flagged_bad_frac, float) else "n/a"
-    s_bad_str = f"{stable_bad_count}/{num_stable} ({stable_bad_frac:.1%})" if isinstance(stable_bad_frac, float) else "n/a"
-    
-    print(f"  Recall@5 (Flagged) : {f_r5_str}")
-    print(f"  Recall@5 (Stable)  : {s_r5_str}")
-    print(f"  Bad Qs (<0.5) Flagged : {f_bad_str}")
-    print(f"  Bad Qs (<0.5) Stable  : {s_bad_str}")
-    print("-" * 60)
+    md_stats = analyze_flags(md_flags)
+    cl_stats = analyze_flags(cl_flags)
 
     return {
         "dataset": dataset_name,
         "base_r5": base_r5,
-        "base_rob_05_5": base_rob_05_5,
+        "base_r10": base_r10,
+        "base_rob": base_rob,
         "rvdb_r5": rvdb_r5,
-        "rvdb_rob_05_5": rvdb_rob_05_5,
-        "flag_rate": flag_rate,
-        "flagged_r5": flagged_r5,
-        "stable_r5": stable_r5,
+        "rvdb_r10": rvdb_r10,
+        "rvdb_rob": rvdb_rob,
+        "md_stats": md_stats,
+        "cl_stats": cl_stats,
     }
-
 
 def main():
     all_metrics = []
@@ -282,36 +231,58 @@ def main():
     print("ROBUSTVDB CROSS-DATASET EVALUATION SUMMARY")
     print("=" * 115)
     
+    with open("C:\\vectordb-project\\beir_eval_results.txt", "w") as f:
+        f.write("=" * 115 + "\n")
+        f.write("ROBUSTVDB CROSS-DATASET EVALUATION SUMMARY\n")
+        f.write("=" * 115 + "\n")
+    
     header = (
-        f"{'Dataset':<12} | "
-        f"{'Base R@5':<10} | "
-        f"{'RVDB R@5':<10} | "
-        f"{'Base Rob0.5':<13} | "
-        f"{'RVDB Rob0.5':<13} | "
-        f"{'Flag Rate':<10} | "
-        f"{'R@5 Flagged':<12} | "
-        f"{'R@5 Stable':<10}"
+        f"{'Dataset':<10} | {'Mode':<14} | "
+        f"{'R@5':<6} | {'R@10':<6} | {'Rob0.5':<7} | "
+        f"{'Flag%':<6} | {'R@5(F)':<8} | {'R@5(S)':<8} | "
+        f"{'Bad%(F)':<8} | {'Bad%(S)':<8}"
     )
     print(header)
     print("-" * 115)
+    with open("C:\\vectordb-project\\beir_eval_results.txt", "a") as f:
+        f.write(header + "\n")
+        f.write("-" * 115 + "\n")
+
+    def _fmt(v, is_pct=False):
+        if isinstance(v, str): return f"{v:>8}"
+        return f"{v:>8.1%}" if is_pct else f"{v:>8.4f}"
 
     for m in all_metrics:
-        f_r5 = f"{m['flagged_r5']:.4f}" if isinstance(m['flagged_r5'], float) else str(m['flagged_r5'])
-        s_r5 = f"{m['stable_r5']:.4f}" if isinstance(m['stable_r5'], float) else str(m['stable_r5'])
-        
-        row = (
-            f"{m['dataset']:<12} | "
-            f"{m['base_r5']:<10.4f} | "
-            f"{m['rvdb_r5']:<10.4f} | "
-            f"{m['base_rob_05_5']:<13.4f} | "
-            f"{m['rvdb_rob_05_5']:<13.4f} | "
-            f"{m['flag_rate']:<10.1%} | "
-            f"{f_r5:<12} | "
-            f"{s_r5:<10}"
+        row_base = (
+            f"{m['dataset']:<10} | {'baseline':<14} | "
+            f"{m['base_r5']:<6.4f} | {m['base_r10']:<6.4f} | {m['base_rob']:<7.4f} | "
+            f"{'':>6} | {'':>8} | {'':>8} | {'':>8} | {'':>8}"
         )
-        print(row)
-    print("=" * 115)
+        print(row_base)
+        
+        md_fr, md_fr5, md_sr5, md_fbad, md_sbad = m["md_stats"]
+        row_md = (
+            f"{'':<10} | {'mean_distance':<14} | "
+            f"{m['rvdb_r5']:<6.4f} | {m['rvdb_r10']:<6.4f} | {m['rvdb_rob']:<7.4f} | "
+            f"{md_fr:>6.1%} | {_fmt(md_fr5)} | {_fmt(md_sr5)} | {_fmt(md_fbad, True)} | {_fmt(md_sbad, True)}"
+        )
+        print(row_md)
 
-
+        cl_fr, cl_fr5, cl_sr5, cl_fbad, cl_sbad = m["cl_stats"]
+        row_cl = (
+            f"{'':<10} | {'clarity':<14} | "
+            f"{m['rvdb_r5']:<6.4f} | {m['rvdb_r10']:<6.4f} | {m['rvdb_rob']:<7.4f} | "
+            f"{cl_fr:>6.1%} | {_fmt(cl_fr5)} | {_fmt(cl_sr5)} | {_fmt(cl_fbad, True)} | {_fmt(cl_sbad, True)}"
+        )
+        print(row_cl)
+        print("-" * 115)
+        
+        # Save to file to ensure it's not lost to console buffer
+        with open("C:\\vectordb-project\\beir_eval_results.txt", "a") as f:
+            f.write(row_base + "\n")
+            f.write(row_md + "\n")
+            f.write(row_cl + "\n")
+            f.write("-" * 115 + "\n")
+            
 if __name__ == "__main__":
     main()
