@@ -39,9 +39,9 @@ BAD_RECALL_THRESHOLD = 0.5  # queries below this are "bad"
 QPP_K_VALUES = [3, 5, 10]
 
 THRESHOLD_RULES = {
-    "mean+0.5σ": lambda bl: float(np.mean(bl) + 0.5 * np.std(bl)),
-    "mean+1.0σ": lambda bl: float(np.mean(bl) + 1.0 * np.std(bl)),
-    "mean+1.5σ": lambda bl: float(np.mean(bl) + 1.5 * np.std(bl)),
+    "mean+0.5s": lambda bl: float(np.mean(bl) + 0.5 * np.std(bl)),
+    "mean+1.0s": lambda bl: float(np.mean(bl) + 1.0 * np.std(bl)),
+    "mean+1.5s": lambda bl: float(np.mean(bl) + 1.5 * np.std(bl)),
     "P75":       lambda bl: float(np.percentile(bl, 75)),
     "P85":       lambda bl: float(np.percentile(bl, 85)),
     "P90":       lambda bl: float(np.percentile(bl, 90)),
@@ -278,9 +278,9 @@ def print_report(
         f"{'Bad%F':>6} | {'Bad%S':>6} | {'Sens':>6}"
     )
     sep = (
-        f"  {'─'*3}─┼─{'─'*10}─┼─{'─'*6}─┼─"
-        f"{'─'*8}─┼─{'─'*8}─┼─{'─'*7}─┼─"
-        f"{'─'*6}─┼─{'─'*6}─┼─{'─'*6}"
+        f"  {'-'*3}-+-{'-'*10}-+-{'-'*6}-+-"
+        f"{'-'*8}-+-{'-'*8}-+-{'-'*7}-+-"
+        f"{'-'*6}-+-{'-'*6}-+-{'-'*6}"
     )
     print(header)
     print(sep)

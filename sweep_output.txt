@@ -1,0 +1,94 @@
+﻿============================================================
+  RobustVDB ù Hard-Query Calibration Sweep
+  Dataset  : scifact
+  Retrieval held fixed ù only flag parameters vary
+============================================================
+[sweep] Downloading / locating scifact ...
+python.exe : 
+At line:1 char:1
++ & .\.venv\Scripts\python.exe -u -m 
+robustvdb.tests.calibration_sweep  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String)  
+   [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  0%|          | 0/5183 [00:00<?, ?it/s]
+100%|##########| 5183/5183 [00:00<00:00, 229962.85it/s]
+Warning: You are sending unauthenticated requests to 
+the HF Hub. Please set a HF_TOKEN to enable higher 
+rate limits and faster downloads.
+
+Loading weights:   0%|          | 0/103 [00:00<?, 
+?it/s]
+Loading weights: 100%|##########| 103/103 
+[00:00<00:00, 10282.11it/s]
+[1mBertModel LOAD REPORT[0m from: 
+sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+[3mNotes:
+- UNEXPECTED[3m	:can be ignored when loading from 
+different task/architecture; not ok if you expect 
+identical arch.[0m
+[sweep] Embedding 5,183 corpus documents ...
+[sweep] Running retrieval (k=10) for 300 queries ...
+
+------------------------------------------------------------
+  SCIFACT ù Dataset Summary
+------------------------------------------------------------
+  Corpus size        : 5,183
+  Queries evaluated  : 300
+  Mean Recall@5     : 0.7413
+  Bad queries (R@5<0.5): 75/300
+------------------------------------------------------------
+
+[sweep] Running calibration sweep ...
+  qpp_k=3: computing calibration baseline ...
+  qpp_k=5: computing calibration baseline ...
+  qpp_k=10: computing calibration baseline ...
+
+===============================================================================================
+  SCIFACT ù CALIBRATION SWEEP RESULTS
+  Queries: 300  |  Bad (R@5<0.5): 75  |  Mean R@5: 0.7413
+===============================================================================================
+    k | Rule       |  Flag% | R@5 Flag | R@5 Stbl |     Gap |  Bad%F |  Bad%S |   Sens
+  ----+------------+--------+----------+----------+---------+--------+--------+-------
+    3 | mean+0.5s  |  62.0% |   0.6817 |   0.8385 |  0.1567 |  31.2% |  14.9% |  77.3%
+    3 | mean+1.0s  |  45.0% |   0.6578 |   0.8096 |  0.1518 |  34.1% |  17.6% |  61.3%
+    3 | mean+1.5s  |  26.7% |   0.6500 |   0.7745 |  0.1245 |  35.0% |  21.4% |  37.3%
+    3 | P75        |  54.0% |   0.6716 |   0.8231 |  0.1515 |  32.7% |  15.9% |  70.7%
+    3 | P85        |  45.0% |   0.6578 |   0.8096 |  0.1518 |  34.1% |  17.6% |  61.3%
+    3 | P90        |  35.0% |   0.6590 |   0.7856 |  0.1265 |  34.3% |  20.0% |  48.0%
+  ----+------------+--------+----------+----------+---------+--------+--------+-------
+    5 | mean+0.5s  |  64.0% |   0.7047 |   0.8063 |  0.1016 |  29.2% |  17.6% |  74.7%
+    5 | mean+1.0s  |  46.0% |   0.6870 |   0.7876 |  0.1006 |  31.2% |  19.8% |  57.3%
+    5 | mean+1.5s  |  29.3% |   0.6841 |   0.7650 |  0.0809 |  31.8% |  22.2% |  37.3%
+    5 | P75        |  58.3% |   0.7103 |   0.7847 |  0.0744 |  28.6% |  20.0% |  66.7%
+    5 | P85        |  46.7% |   0.6843 |   0.7911 |  0.1069 |  31.4% |  19.4% |  58.7%
+    5 | P90        |  36.3% |   0.6991 |   0.7654 |  0.0663 |  30.3% |  22.0% |  44.0%
+  ----+------------+--------+----------+----------+---------+--------+--------+-------
+   10 | mean+0.5s  |  68.3% |   0.7307 |   0.7640 |  0.0333 |  26.3% |  22.1% |  72.0%
+   10 | mean+1.0s  |  49.3% |   0.7318 |   0.7505 |  0.0188 |  26.4% |  23.7% |  52.0%
+   10 | mean+1.5s  |  31.0% |   0.7226 |   0.7497 |  0.0271 |  28.0% |  23.7% |  34.7%
+   10 | P75        |  65.7% |   0.7376 |   0.7484 |  0.0108 |  25.9% |  23.3% |  68.0%
+   10 | P85        |  51.0% |   0.7340 |   0.7489 |  0.0149 |  26.1% |  23.8% |  53.3%
+   10 | P90        |  39.3% |   0.7305 |   0.7483 |  0.0178 |  27.1% |  23.6% |  42.7%
+===============================================================================================
+
+------------------------------------------------------------
+  BEST SETTING
+------------------------------------------------------------
+  qpp_k            : 3
+  Threshold rule   : mean+1.0s
+  Flag rate        : 45.0%  (in 5û50%: yes)
+  R@5 flagged      : 0.6578
+  R@5 stable       : 0.8096
+  Gap              : 0.1518
+  Bad% flagged     : 34.1%
+  Bad% stable      : 17.6%
+  Sensitivity      : 61.3%
+------------------------------------------------------------

@@ -34,31 +34,51 @@ def classify_query(avg_distance: float, threshold: float) -> str:
 
 def hard_query_check(
     neighbor_scores: np.ndarray,
-    baseline_distances: np.ndarray,
+    baseline_distances: np.ndarray | None = None,
+    qpp_mode: str = "mean_distance",
+    qpp_threshold: float | None = None,
+    qpp_k: int | None = None,
 ) -> str:
     """
     End-to-end hard-query detection for a single query.
-
-    Since our index uses IndexFlatIP with normalised embeddings, search
-    returns cosine similarity scores (higher = more similar).  We convert
-    them to distance-like values so the threshold logic stays intuitive:
-
-        distance = 1.0 - similarity
 
     Args:
         neighbor_scores:    1D array of similarity scores from the query
                             to its top-k nearest neighbours.
         baseline_distances: 1D array of pre-computed average distances from
                             a calibration set (fixed, not updated dynamically).
+                            Only used if qpp_mode == "mean_distance".
+        qpp_mode:           "mean_distance" (default) or "clarity".
+        qpp_threshold:      Explicit threshold (required for "clarity").
+        qpp_k:              How many neighbor scores to consider. Defaults to all.
 
     Returns:
         "hard_query_warning" or "stable".
     """
     _validate_1d_nonempty(neighbor_scores, "neighbor_scores")
 
-    # Convert similarity scores to distance-like values
-    distances = 1.0 - neighbor_scores
-    avg_distance = float(np.mean(distances))
+    scores_to_use = neighbor_scores[:qpp_k] if qpp_k is not None else neighbor_scores
 
-    threshold = compute_threshold(baseline_distances)
-    return classify_query(avg_distance, threshold)
+    if qpp_mode == "clarity":
+        if qpp_threshold is None:
+            raise ValueError("qpp_mode 'clarity' requires an explicit qpp_threshold")
+        if len(scores_to_use) > 1:
+            margin = float(scores_to_use[0] - np.mean(scores_to_use[1:]))
+        else:
+            margin = 0.0
+        qpp_score = -margin
+        threshold = qpp_threshold
+
+    elif qpp_mode == "mean_distance":
+        distances = 1.0 - scores_to_use
+        qpp_score = float(np.mean(distances))
+        if qpp_threshold is not None:
+            threshold = qpp_threshold
+        elif baseline_distances is not None:
+            threshold = compute_threshold(baseline_distances)
+        else:
+            return "stable"
+    else:
+        raise ValueError(f"Unknown qpp_mode: {qpp_mode}")
+
+    return classify_query(qpp_score, threshold)

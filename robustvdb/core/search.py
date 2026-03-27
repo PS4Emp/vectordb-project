@@ -14,10 +14,23 @@ from robustvdb.metrics.hardquery import hard_query_check
 class RobustVDB:
     """Main search orchestration layer for the RobustVDB project."""
 
-    def __init__(self, model_name: str = DEFAULT_MODEL_NAME, baseline_distances: np.ndarray | None = None):
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL_NAME,
+        baseline_distances: np.ndarray | None = None,
+        qpp_mode: str = "mean_distance",
+        qpp_threshold: float | None = None,
+        qpp_k: int | None = None,
+    ):
         self.embedder = EmbeddingModel(model_name)
         self.index: VectorIndex | None = None
         self.baseline_distances = baseline_distances
+        self.qpp_mode = qpp_mode
+        self.qpp_threshold = qpp_threshold
+        self.qpp_k = qpp_k
+
+        if self.qpp_mode == "clarity" and self.qpp_threshold is None:
+            raise ValueError("qpp_mode 'clarity' requires an explicit qpp_threshold")
 
     def add(self, texts: list[str]) -> None:
         """Embed and store documents in the FAISS index."""
@@ -50,8 +63,14 @@ class RobustVDB:
         scores, indices = self.index.search(query_embedding, k)
 
         # Hard-query detection is query-level, so compute once for all results
-        if self.baseline_distances is not None:
-            robustness_flag = hard_query_check(scores[0], self.baseline_distances)
+        if self.qpp_mode == "clarity" or self.baseline_distances is not None or self.qpp_threshold is not None:
+            robustness_flag = hard_query_check(
+                scores[0],
+                baseline_distances=self.baseline_distances,
+                qpp_mode=self.qpp_mode,
+                qpp_threshold=self.qpp_threshold,
+                qpp_k=self.qpp_k,
+            )
         else:
             robustness_flag = "stable"
 

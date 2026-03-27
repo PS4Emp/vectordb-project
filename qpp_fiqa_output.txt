@@ -1,0 +1,137 @@
+﻿============================================================
+  RobustVDB -- QPP Signal Ablation
+  Comparing 4 query-difficulty signals on BEIR
+  Retriever fixed  |  qpp_k=3
+============================================================
+python.exe : Warning: You are sending 
+unauthenticated requests to the HF Hub. Please set 
+a HF_TOKEN to enable higher rate limits and faster 
+downloads.
+At line:1 char:1
++ & .\.venv\Scripts\python.exe -u -m 
+robustvdb.tests.qpp_ablation 2>&1  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: 
+(Warning:     You ar...ster downloads.:String) [], 
+RemoteExcepti    on
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+Loading weights:   0%|          | 0/103 [00:00<?, 
+?it/s]
+Loading weights: 100%|##########| 103/103 
+[00:00<00:00, 13679.53it/s]
+[1mBertModel LOAD REPORT[0m from: 
+sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+[3mNotes:
+- UNEXPECTED[3m	:can be ignored when loading from 
+different task/architecture; not ok if you expect 
+identical arch.[0m
+
+============================================================
+  QPP Ablation -- FIQA
+============================================================
+[qpp] Downloading / locating fiqa ...
+
+  0%|          | 0/57638 [00:00<?, ?it/s]
+ 29%|##8       | 16708/57638 [00:00<00:00, 
+165787.24it/s]
+ 58%|#####7    | 33287/57638 [00:00<00:00, 
+136849.23it/s]
+ 86%|########5 | 49385/57638 [00:00<00:00, 
+146692.26it/s]
+100%|##########| 57638/57638 [00:00<00:00, 
+142807.53it/s]
+[qpp] Embedding 57,638 corpus documents ...
+[qpp] Running retrieval (k=10) for 648 queries ...
+
+  Corpus: 57,638  |  Queries: 648
+  Mean R@5: 0.3671  |  Bad (R@5<0.5): 384/648
+
+[qpp] Computing difficulty signals (qpp_k=3) ...
+
+  Signal: MeanDist
+    Pct |  Flag% | R@5 Flag | R@5 Stbl |     Gap |  Bad%F |  Bad%S
+  ------+--------+----------+----------+---------+--------+-------
+  P50  |  50.0% |   0.3495 |   0.3846 |  0.0351 |  61.7% |  56.8%
+  P60  |  40.0% |   0.3507 |   0.3779 |  0.0272 |  61.8% |  57.6%
+  P70  |  30.1% |   0.3338 |   0.3814 |  0.0476 |  64.1% |  57.2%
+  P80  |  20.1% |   0.3338 |   0.3754 |  0.0415 |  63.8% |  58.1%
+  P90  |  10.0% |   0.2946 |   0.3751 |  0.0805 |  69.2% |  58.1%
+
+  Signal: MeanDist+Std
+    Pct |  Flag% | R@5 Flag | R@5 Stbl |     Gap |  Bad%F |  Bad%S
+  ------+--------+----------+----------+---------+--------+-------
+  P50  |  50.0% |   0.3718 |   0.3623 | -0.0094 |  58.6% |  59.9%
+  P60  |  40.0% |   0.3736 |   0.3627 | -0.0110 |  57.9% |  60.2%
+  P70  |  30.1% |   0.3953 |   0.3549 | -0.0404 |  56.9% |  60.3%
+  P80  |  20.1% |   0.4029 |   0.3580 | -0.0449 |  56.2% |  60.0%
+  P90  |  10.0% |   0.3726 |   0.3664 | -0.0061 |  60.0% |  59.2%
+
+  Signal: Clarity
+    Pct |  Flag% | R@5 Flag | R@5 Stbl |     Gap |  Bad%F |  Bad%S
+  ------+--------+----------+----------+---------+--------+-------
+  P50  |  50.0% |   0.2608 |   0.4733 |  0.2126 |  72.5% |  46.0%
+  P60  |  40.0% |   0.2500 |   0.4450 |  0.1950 |  74.1% |  49.4%
+  P70  |  30.1% |   0.2538 |   0.4158 |  0.1620 |  73.8% |  53.0%
+  P80  |  20.1% |   0.2459 |   0.3975 |  0.1515 |  75.4% |  55.2%
+  P90  |  10.0% |   0.2253 |   0.3829 |  0.1576 |  76.9% |  57.3%
+
+  Signal: LexDisagree
+    Pct |  Flag% | R@5 Flag | R@5 Stbl |     Gap |  Bad%F |  Bad%S
+  ------+--------+----------+----------+---------+--------+-------
+  P50  |  50.0% |   0.3279 |   0.4062 |  0.0783 |  62.3% |  56.2%
+  P60  |  40.0% |   0.3234 |   0.3961 |  0.0727 |  63.3% |  56.6%
+  P70  |  30.1% |   0.3060 |   0.3933 |  0.0874 |  65.6% |  56.5%
+  P80  |  20.1% |   0.3093 |   0.3815 |  0.0722 |  65.4% |  57.7%
+  P90  |  10.0% |   0.2742 |   0.3774 |  0.1032 |  67.7% |  58.3%
+
+  ======================================================================
+  FIQA -- BEST SETTING PER SIGNAL  (qpp_k=3)
+  ======================================================================
+
+  MeanDist
+    Threshold  : P90
+    Flag rate  : 10.0%  (in 5-50%: yes)
+    R@5 flag   : 0.2946
+    R@5 stable : 0.3751
+    Gap        : 0.0805
+    Bad% flag  : 69.2%
+    Bad% stable: 58.1%
+
+  MeanDist+Std
+    No positive gap at any threshold.
+
+  Clarity
+    Threshold  : P50
+    Flag rate  : 50.0%  (in 5-50%: yes)
+    R@5 flag   : 0.2608
+    R@5 stable : 0.4733
+    Gap        : 0.2126
+    Bad% flag  : 72.5%
+    Bad% stable: 46.0%
+
+  LexDisagree
+    Threshold  : P90
+    Flag rate  : 10.0%  (in 5-50%: yes)
+    R@5 flag   : 0.2742
+    R@5 stable : 0.3774
+    Gap        : 0.1032
+    Bad% flag  : 67.7%
+    Bad% stable: 58.3%
+
+  ======================================================================
+  SIGNAL RANKING (by best gap)
+  ======================================================================
+  1. Clarity         gap=0.2126  flag=50%  bad%F=72.5%
+  2. LexDisagree     gap=0.1032  flag=10%  bad%F=67.7%
+  3. MeanDist        gap=0.0805  flag=10%  bad%F=69.2%
+
+============================================================
+  Done.
+============================================================
